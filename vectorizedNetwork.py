@@ -3,6 +3,7 @@ import random
 import math
 import codecs
 import matplotlib.pyplot as plt
+import json
 
 def toInt(b):
 	return int(codecs.encode(b, "hex"), 16)
@@ -44,31 +45,84 @@ def loadData(vector=True):
 	testImages = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-images-idx3-ubyte")
 	data["test"] = np.asarray(list(zip(testImages, np.asarray(testLabels))))
 	return data
-
-
-
 #data[key][example#][0 = pixels, 1 = correctanswer]
-
-
 '''
 import codecs
 #import cv2 as cv
 def decodeToHex(b):
 	return int(codecs.encode(b, "hex"), 16)
 	'''
-
 def sigmoid(x):
 	#sizes is a list where the first term is num of inputs, last term (output) has to be 1
 	return 1/(1+np.exp(-x))
 def derivSigmoid(x):
 	return sigmoid(x)*(1-sigmoid(x))
 
-class Network(object):
-	def __init__ (self, sizes):
-		self.weights = [np.random.randn(y, x) for y, x in zip(sizes[1:], sizes[:-1])]
-		self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
+def retreiveNetwork():
+	biases = {}
+	weights = {}
+	with open("weights.txt", 'r') as JSONFile:
+		data = json.load(JSONFile)
+		for i in data:
+			weights[i] = []
+			for j in range(len(data[i])):
+				weights[i].append(data[i][j])
+		for i in weights:
+			weights[i] = np.asarray(weights[i])
+	with open("biases.txt", 'r') as JSONFile:
+		data = json.load(JSONFile)
+		for i in data:
+			biases[i] = []
+			for j in range(len(data[i])):
+				biases[i].append(data[i][j])
+		for i in biases:
+			biases[i] = np.asarray(biases[i])	
+	b = []
+	w = []
+	placeHolder = 0
+	while (placeHolder<(len(weights))):
+		for i in weights:
+			if (int(i)==placeHolder):
+				w.append([])
+				for j in weights[i]:
+					w[int(i)].append(np.asarray(j))
+				placeHolder+=1
+	placeHolder = 0
+	while (placeHolder<(len(biases))):
+		for i in biases:
+			if (int(i)==placeHolder):
+				b.append([])
+				for j in biases[i]:
+					b[int(i)].append(np.asarray(j))
+				placeHolder+=1
+	return w, b
+
+
+class Network():
+	def __init__ (self, sizes, trainedWeights=None, trainedBiases=None):
 		self.numOfLayers = len(sizes)
+		if (trainedWeights==None):
+			self.weights = [np.random.randn(y, x) for y, x in zip(sizes[1:], sizes[:-1])]
+			self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
+		else:
+			self.weights = [trainedWeights[i] for i in trainedWeights]
+			self.biases = [trainedBiases[i] for i in trainedBiases]
+		for b in self.biases:
+			print(b)
 		#print(self.weights)
+	def saveNetwork(self):
+		trainedBiases = {}
+		trainedWeights = {}
+		for i in range(len(self.weights)):
+			trainedBiases[i] = []
+			trainedWeights[i] = []
+			for j, k in zip(self.biases[i], self.weights[i]):
+				trainedBiases[i].append(j.tolist())
+				trainedWeights[i].append(k.tolist())
+		with open("weights.txt", 'w+') as JSONFile:
+			json.dump(trainedWeights, JSONFile)
+		with open("biases.txt", 'w+') as JSONFile:
+			json.dump(trainedBiases, JSONFile)
 	def SGD(self, trainingData, miniBatchSize, epochs, eta, testPixels, testNumbers):
 		printNumber = 1
 		for j in range(epochs):
@@ -121,6 +175,8 @@ class Network(object):
 		activations = []
 		for w, b in zip(self.weights, self.biases):
 			z = np.dot(w, activation)+b
+			print(w.shape)
+			print(activation.shape)
 			zs.append(z)
 			activation = sigmoid(z)
 			activations.append(activation)
@@ -146,7 +202,7 @@ def divideData(data, trainOrTest):
 numOfInputs = 784
 sizes = np.array([numOfInputs,2,3,1])
 
-
+'''
 x = np.array([-2, -1]).reshape(2, 1)
 y = np.array([1])
 print(x.shape)
@@ -157,17 +213,29 @@ print(data.shape)
 correct = np.array([[0],[0],[1]])
 print(correct.shape)
 #trainingData = zip(data, correct)
+'''
+w, b = retreiveNetwork()
+for biases in b:
+	print(biases)
+network = Network(sizes)
+
+'''
+
 trainingData, testPixels, testNumbers = divideData(loadData(False), "train")
+
 #print(trainingData.shape)
 network = Network(sizes)
+#network.saveNetwork()
 #network.feedforward(x)
+
 network.SGD(trainingData, 2, 100, 2, testPixels, testNumbers)
+
 #network.feedforward(x)
 #network.updateMiniBatch(dataSet, 3)
 #weightError, biasError = network.backpropogation(d[0], y)
 
 
-
+'''
 
 
 
