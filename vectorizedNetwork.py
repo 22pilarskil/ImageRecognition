@@ -35,7 +35,11 @@ def loadFile(fileName, mode="rb"):
 		else: return -1
 		return parsed
 def loadData(vector=True):
+	print("Loading Data...")
 	data = {"train":[], "validation":[], "test":[]}
+	#For different computers, it will be different addresses. Go to this link (http://yann.lecun.com/exdb/mnist/) and download all four files
+	#Double click on each file, and store in a separate folder inside your network directory (in my example, is called "data")
+	#Now, you can reach your files
 	trainImages = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/train-images-idx3-ubyte")
 	trainLabels = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/train-labels-idx1-ubyte")
 	if vector:
@@ -83,20 +87,15 @@ def retreiveNetwork():
 	while (placeHolder<(len(weights))):
 		for i in weights:
 			if (int(i)==placeHolder):
-				w.append([])
-				for j in weights[i]:
-					w[int(i)].append(np.asarray(j))
+				w.append(weights[i])
 				placeHolder+=1
 	placeHolder = 0
 	while (placeHolder<(len(biases))):
 		for i in biases:
 			if (int(i)==placeHolder):
-				b.append([])
-				for j in biases[i]:
-					b[int(i)].append(np.asarray(j))
+				b.append(biases[i])
 				placeHolder+=1
 	return w, b
-
 
 class Network():
 	def __init__ (self, sizes, trainedWeights=None, trainedBiases=None):
@@ -105,11 +104,8 @@ class Network():
 			self.weights = [np.random.randn(y, x) for y, x in zip(sizes[1:], sizes[:-1])]
 			self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
 		else:
-			self.weights = [trainedWeights[i] for i in trainedWeights]
-			self.biases = [trainedBiases[i] for i in trainedBiases]
-		for b in self.biases:
-			print(b)
-		#print(self.weights)
+			self.weights = trainedWeights
+			self.biases = trainedBiases
 	def saveNetwork(self):
 		trainedBiases = {}
 		trainedWeights = {}
@@ -124,6 +120,7 @@ class Network():
 		with open("biases.txt", 'w+') as JSONFile:
 			json.dump(trainedBiases, JSONFile)
 	def SGD(self, trainingData, miniBatchSize, epochs, eta, testPixels, testNumbers):
+		print("Starting Stochastic Gradient Descent...")
 		printNumber = 1
 		for j in range(epochs):
 			random.shuffle(trainingData)
@@ -133,6 +130,8 @@ class Network():
 				error = self.mse(testPixels, testNumbers)
 			if (j%printNumber==0):
 				print("Epoch %d complete. Percent Error: %.8f" %(j, error))
+		self.saveNetwork()
+		print("saved")
 	def updateMiniBatch(self, miniBatch, eta):
 		weightError = [np.zeros(w.shape) for w in self.weights]
 		biasError = [np.zeros(b.shape) for b in self.biases]
@@ -143,7 +142,6 @@ class Network():
 			biasError = [be+dbe for be, dbe in zip(biasError, deltaBiasError)]
 		self.weights = [w-(eta/len(miniBatch)*we) for w, we in zip(self.weights, weightError)]
 		self.biases = [b-(eta/len(miniBatch)*be) for b, be in zip(self.biases, biasError)]
-		#print (self.weights)
 	def backprop(self, x, y):
 		weightError = [np.zeros(w.shape) for w in self.weights]
 		biasError = [np.zeros(b.shape) for b in self.biases]
@@ -175,8 +173,6 @@ class Network():
 		activations = []
 		for w, b in zip(self.weights, self.biases):
 			z = np.dot(w, activation)+b
-			print(w.shape)
-			print(activation.shape)
 			zs.append(z)
 			activation = sigmoid(z)
 			activations.append(activation)
@@ -199,43 +195,18 @@ def divideData(data, trainOrTest):
 	testNumbers = numbers[0]
 	return trainingData, testPixels, testNumbers
 
+#
 numOfInputs = 784
+epochs = 10000
 sizes = np.array([numOfInputs,2,3,1])
-
-'''
-x = np.array([-2, -1]).reshape(2, 1)
-y = np.array([1])
-print(x.shape)
-print(y.shape)
-#miniBatch = [[x], [y]]
-data = np.array([[[-2, -1]], [[20,100]],[[-3,-2]]])
-print(data.shape)
-correct = np.array([[0],[0],[1]])
-print(correct.shape)
-#trainingData = zip(data, correct)
-'''
-w, b = retreiveNetwork()
-for biases in b:
-	print(biases)
-network = Network(sizes)
-
-'''
-
 trainingData, testPixels, testNumbers = divideData(loadData(False), "train")
-
-#print(trainingData.shape)
 network = Network(sizes)
-#network.saveNetwork()
-#network.feedforward(x)
-
-network.SGD(trainingData, 2, 100, 2, testPixels, testNumbers)
-
-#network.feedforward(x)
-#network.updateMiniBatch(dataSet, 3)
-#weightError, biasError = network.backpropogation(d[0], y)
-
+network.SGD(trainingData, 2, epochs, 2, testPixels, testNumbers)
 
 '''
-
-
-
+#this allows you to take weights that have been saved in your network and use them for specifc examples
+w, b = retreiveNetwork()
+example = np.random.rand(784, 1)
+trainedNetwork = Network(sizes)
+answer = trainedNetwork.feedforward(example)
+'''
