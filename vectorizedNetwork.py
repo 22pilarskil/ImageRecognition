@@ -2,7 +2,7 @@ import numpy as np
 import random
 import math
 import codecs
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import json
 
 def toInt(b):
@@ -36,6 +36,11 @@ def loadFile(fileName, mode="rb"):
 		return parsed
 def loadData(vector=True):
 	print("Loading Data...")
+	'''
+	Before using this function, you must first download all four of the binary array files from this link (http://yann.lecun.com/exdb/mnist/)
+	Drag them to your directory without double clicking them, and only once you have placed them in a separate directory (in my case, 'data') do you double click them
+	Change the argument in the laodFile function to the directory paths of each of the files
+	'''
 	data = {"train":[], "validation":[], "test":[]}
 	trainImages = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/train-images-idx3-ubyte")
 	trainLabels = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/train-labels-idx1-ubyte")
