@@ -93,8 +93,7 @@ def retreiveNetwork():
 	return w, b
 
 class Network():
-	def __init__ (self, sizes, trainedWeights=None, trainedBiases=None, saveNetwork=True):
-		if(saveNetwork): print("Accessing saved weights...")
+	def __init__ (self, sizes, trainedWeights=None, trainedBiases=None, saveNetworkStuff=True):
 		self.numOfLayers = len(sizes)
 		if (trainedWeights==None):
 			self.weights = [np.random.randn(y, x) for y, x in zip(sizes[1:], sizes[:-1])]
@@ -102,7 +101,7 @@ class Network():
 		else:
 			self.weights = trainedWeights
 			self.biases = trainedBiases
-		self.saveNetwork = saveNetwork
+		self.saveNetworkStuff = saveNetworkStuff
 	def saveNetwork(self):
 		trainedBiases = {}
 		trainedWeights = {}
@@ -135,7 +134,7 @@ class Network():
 			totalPercent/=numOfTests
 			if (j%printNumber==0):
 				print("Epoch %d complete. Percent Error: %.8f. Total Correct: %d/%d" %(j, totalPercent*100, totalCorrect, numOfTests))
-		if(self.saveNetwork):
+		if(self.saveNetworkStuff):
 			self.saveNetwork()
 			print("Weights and Biases Saved")
 	def updateMiniBatch(self, miniBatch, eta):
@@ -214,7 +213,7 @@ def divideData(data, trainOrTest):
 
 #Parameter Declarations-------------
 numOfInputs = 784
-epochs = 100
+epochs = 700
 sizeOfMinis = 10000
 learnRate = 2
 sizes = np.array([numOfInputs,2,3,10])
@@ -222,7 +221,7 @@ sizes = np.array([numOfInputs,2,3,10])
 
 #Learning--------------------------
 trainingData, testPixels, testNumbers = divideData(loadData(), "train")
-network = Network(sizes, trainedWeights=None, trainedBiases=None, saveNetwork=True)
+network = Network(sizes, trainedWeights=None, trainedBiases=None, saveNetworkStuff=True)
 network.SGD(trainingData, sizeOfMinis, epochs, learnRate, testPixels, testNumbers)
 #----------------------------------
 '''
