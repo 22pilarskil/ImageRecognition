@@ -2,7 +2,7 @@ import numpy as np
 import random
 import math
 import codecs
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import json
 
 def toInt(b):
@@ -19,6 +19,19 @@ def vectorize(num):
 	array = np.zeros(10)
 	array[num] = 1
 	return array
+def display_image(pixels, label = None):
+  """function that displays an image using matplotlib--
+   not really necessary for the digit classifier"""
+  figure = plt.gcf()
+  figure.canvas.set_window_title("Number display")
+  
+  if label != None:
+    plt.title("Label: \"{label}\"".format(label = label))
+  else:
+    plt.title("No label")
+    
+  plt.imshow(pixels, cmap = "gray")
+  plt.show()
 def loadFile(fileName, mode="rb"):
 	with open(fileName, mode) as raw:
 		data = raw.read()
@@ -50,6 +63,7 @@ def loadData(vector=True):
 	testLabels = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-labels-idx1-ubyte")
 	testImages = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-images-idx3-ubyte")
 	data["test"] = np.asarray(list(zip(testImages, np.asarray(testLabels))))
+	#display_image(data["train"][59999][0].reshape(28, 28))
 	return data
 
 def sigmoid(x):
@@ -98,6 +112,8 @@ class Network():
 		if (trainedWeights==None):
 			self.weights = [np.random.randn(y, x) for y, x in zip(sizes[1:], sizes[:-1])]
 			self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
+			#self.weights = [np.zeros((y, x)) for y, x in zip(sizes[1:], sizes[:-1])]
+			#self.biases = [np.zeros((y, 1)) for y in sizes[1:]]
 		else:
 			self.weights = trainedWeights
 			self.biases = trainedBiases
@@ -126,14 +142,14 @@ class Network():
 			error = 0
 			numOfTests = len(testPixels)
 			totalCorrect = 0
-			totalPercent = 0
+			totalPercentx = 0
 			for i in range(numOfTests):
-				correct, c = self.mse(testPixels[i].transpose(), testNumbers[i])
+				totalPercent, correct = self.mse(testPixels[i].transpose(), testNumbers[i])
 				totalCorrect+=correct
-				totalPercent+=np.asscalar(c)
-			totalPercent/=numOfTests
+				totalPercentx+=totalPercent
+			totalPercentx/=numOfTests
 			if (j%printNumber==0):
-				print("Epoch %d complete. Percent Error: %.8f. Total Correct: %d/%d" %(j, totalPercent*100, totalCorrect, numOfTests))
+				print("Epoch %d complete. Percent Error: %.8f. Total Correct: %d/%d" %(j, totalPercentx*100, totalCorrect, numOfTests))
 		if(self.saveNetworkStuff):
 			self.saveNetwork()
 			print("Weights and Biases Saved")
@@ -175,31 +191,18 @@ class Network():
 		zs = []
 		activations = []
 		for w, b in zip(self.weights, self.biases):
-			z = np.dot(w, activation)+b
-			zs.append(z)
-			activation = sigmoid(z)
-			activations.append(activation)
+			activation = sigmoid(np.dot(w, activation)+b)
 		return(activation)
 	def mse(self, x, y):
-		whatINeed = self.feedforward(x)
-		xplaceholder = 0
-		xval = 0
-		yplaceholder = 0
-		yval = 0
+		prediction = self.feedforward(x)
 		correct = 0
-		for i in range(len(whatINeed)):
-			if (whatINeed[i]>xplaceholder): 
-				xplaceholder = whatINeed[i]
-				xval = i
-		for i in range(len(y[0])):
-			if (y[0][i]>yplaceholder): 
-				yplaceholder = y[0][i]
-				yval = i
-		if (yval==xval): correct = 1
-		return correct, 1-(whatINeed[yval]/yplaceholder)
+		totalPercent = (np.linalg.norm(prediction - y) ** 2)
+		totalPercent = totalPercent**(float(1)/totalPercent)/10
+		if np.argmax(prediction) == np.argmax(y): correct = 1
+		return 1-totalPercent, correct
+
 def costDerivative(y, activation):
 	whatINeed = y-activation
-	whatINeed = whatINeed*whatINeed/whatINeed
 	return whatINeed
 def divideData(data, trainOrTest):
 	pixels = np.asarray([np.array([data[trainOrTest][i][0]]) for i in range(60000)])
@@ -221,7 +224,15 @@ sizes = np.array([numOfInputs,2,3,10])
 
 #Learning--------------------------
 trainingData, testPixels, testNumbers = divideData(loadData(), "train")
-network = Network(sizes, trainedWeights=None, trainedBiases=None, saveNetworkStuff=True)
+w, b = retreiveNetwork()
+network = Network(sizes, trainedWeights=w, trainedBiases=b, saveNetworkStuff=True)
+'''
+cc = np.zeros((10, 1))
+cc[0] = 1
+print(network.mse(np.zeros((784, 1)), cc))
+pairs = [(np.zeros((784, 1)), cc)]
+print (network.getCost(pairs))
+'''
 network.SGD(trainingData, sizeOfMinis, epochs, learnRate, testPixels, testNumbers)
 #----------------------------------
 '''
