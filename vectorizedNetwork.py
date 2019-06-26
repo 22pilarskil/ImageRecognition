@@ -1,12 +1,20 @@
 import numpy as np 
 import random
-import math
 import codecs
 import matplotlib.pyplot as plt
 import json
 
+class crossEntropyCost(object):
+	@staticmethod
+	def fn(a, y):
+		return np.sum(np.nan_to_num(-y*np.log(a)-(1-y)*np.log(1-a)))
+	@staticmethod
+	def delta(z, a, y):
+		return (a.transpose()-y)
+
 def toInt(b):
 	return int(codecs.encode(b, "hex"), 16)
+
 def normalize(rawArray, range_):
 	array = np.copy(rawArray).astype(np.float32)
 	if range_ == (0, 1):
@@ -15,23 +23,20 @@ def normalize(rawArray, range_):
 	dist = abs(range_[0])+abs(range_[1])
 	array /= dist
 	return array
+
 def vectorize(num):
 	array = np.zeros(10)
 	array[num] = 1
 	return array
-def display_image(pixels, label = None):
-  """function that displays an image using matplotlib--
-   not really necessary for the digit classifier"""
+
+def displayImage(pixels, label = None):
   figure = plt.gcf()
   figure.canvas.set_window_title("Number display")
-  
-  if label != None:
-    plt.title("Label: \"{label}\"".format(label = label))
-  else:
-    plt.title("No label")
-    
+  if label != None: plt.title("Label: \"{label}\"".format(label = label))
+  else: plt.title("No label")  
   plt.imshow(pixels, cmap = "gray")
   plt.show()
+
 def loadFile(fileName, mode="rb"):
 	with open(fileName, mode) as raw:
 		data = raw.read()
@@ -47,6 +52,7 @@ def loadFile(fileName, mode="rb"):
 			parsed = normalize(np.frombuffer(data, dtype=np.uint8, offset = 16).reshape(length, numOfRows*numOfColumns), (0, 255))
 		else: return -1
 		return parsed
+
 def loadData(vector=True):
 	print("Loading Data...")
 	'''
@@ -63,61 +69,51 @@ def loadData(vector=True):
 	testLabels = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-labels-idx1-ubyte")
 	testImages = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-images-idx3-ubyte")
 	data["test"] = np.asarray(list(zip(testImages, np.asarray(testLabels))))
-	#display_image(data["train"][59999][0].reshape(28, 28))
 	return data
 
 def sigmoid(x):
-	return 1/(1+np.exp(-x))
+	return float(1)/(float(1)+np.exp(-x))
+
 def derivSigmoid(x):
 	return sigmoid(x)*(1-sigmoid(x))
 
 def retreiveNetwork():
 	biases = {}
 	weights = {}
-	with open("weights.txt", 'r') as JSONFile:
-		data = json.load(JSONFile)
-		for i in data:
-			weights[i] = []
-			for j in range(len(data[i])):
-				weights[i].append(data[i][j])
-		for i in weights:
-			weights[i] = np.asarray(weights[i])
-	with open("biases.txt", 'r') as JSONFile:
-		data = json.load(JSONFile)
-		for i in data:
-			biases[i] = []
-			for j in range(len(data[i])):
-				biases[i].append(data[i][j])
-		for i in biases:
-			biases[i] = np.asarray(biases[i])	
 	b = []
 	w = []
-	placeHolder = 0
-	while (placeHolder<(len(weights))):
-		for i in weights:
-			if (int(i)==placeHolder):
-				w.append(weights[i])
-				placeHolder+=1
-	placeHolder = 0
-	while (placeHolder<(len(biases))):
-		for i in biases:
-			if (int(i)==placeHolder):
-				b.append(biases[i])
-				placeHolder+=1
+	def take(fileName, mode, dictionary, listName):
+		with open(fileName, mode) as JSONFile:
+			data = json.load(JSONFile)
+			for i in data:
+				dictionary[i] = []
+				for j in range(len(data[i])):
+					dictionary[i].append(data[i][j])
+			for i in dictionary:
+				dictionary[i] = np.asarray(dictionary[i])
+		placeHolder = 0
+		while (placeHolder<(len(dictionary))):
+			for i in dictionary:
+				if (int(i)==placeHolder):
+					listName.append(dictionary[i])
+					placeHolder+=1
+	take("weights.txt", 'r', weights, w)
+	take("biases.txt", 'r', biases, b)
 	return w, b
 
 class Network():
-	def __init__ (self, sizes, trainedWeights=None, trainedBiases=None, saveNetworkStuff=True):
+
+	def __init__ (self, sizes, trainedWeights=None, trainedBiases=None, saveNetworkStuff=True, cost=crossEntropyCost):
 		self.numOfLayers = len(sizes)
 		if (trainedWeights==None):
 			self.weights = [np.random.randn(y, x) for y, x in zip(sizes[1:], sizes[:-1])]
 			self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
-			#self.weights = [np.zeros((y, x)) for y, x in zip(sizes[1:], sizes[:-1])]
-			#self.biases = [np.zeros((y, 1)) for y in sizes[1:]]
 		else:
 			self.weights = trainedWeights
 			self.biases = trainedBiases
 		self.saveNetworkStuff = saveNetworkStuff
+		self.cost = cost
+
 	def saveNetwork(self):
 		trainedBiases = {}
 		trainedWeights = {}
@@ -131,7 +127,8 @@ class Network():
 			json.dump(trainedWeights, JSONFile)
 		with open("biases.txt", 'w+') as JSONFile:
 			json.dump(trainedBiases, JSONFile)
-	def SGD(self, trainingData, miniBatchSize, epochs, eta, testPixels, testNumbers):
+
+	def SGD(self, trainingData, miniBatchSize, epochs, eta, testData):
 		print("Starting Stochastic Gradient Descent...")
 		printNumber = 1
 		for j in range(epochs):
@@ -139,12 +136,12 @@ class Network():
 			miniBatches = [trainingData[k:k+miniBatchSize] for k in range(0, len(trainingData), miniBatchSize)]
 			for miniBatch in miniBatches:
 				self.updateMiniBatch(miniBatch, eta)
-			error = 0
-			numOfTests = len(testPixels)
 			totalCorrect = 0
 			totalPercentx = 0
-			for i in range(numOfTests):
-				totalPercent, correct = self.mse(testPixels[i].transpose(), testNumbers[i])
+			blah = trainingData
+			numOfTests = len(blah)
+			for x, y in blah:
+				totalPercent, correct = self.mse(x.reshape(784, 1), y)
 				totalCorrect+=correct
 				totalPercentx+=totalPercent
 			totalPercentx/=numOfTests
@@ -153,6 +150,7 @@ class Network():
 		if(self.saveNetworkStuff):
 			self.saveNetwork()
 			print("Weights and Biases Saved")
+
 	def updateMiniBatch(self, miniBatch, eta):
 		weightError = [np.zeros(w.shape) for w in self.weights]
 		biasError = [np.zeros(b.shape) for b in self.biases]
@@ -162,14 +160,15 @@ class Network():
 			weightError = [we+dwe for we, dwe in zip(weightError, deltaWeightError)]
 			biasError = [be+dbe for be, dbe in zip(biasError, deltaBiasError)]
 		#try changing eta/len to just eta
-		self.weights = [w-(float(eta)/len(miniBatch)*we) for w, we in zip(self.weights, weightError)]
-		self.biases = [b-(float(eta)/len(miniBatch)*be) for b, be in zip(self.biases, biasError)]
+		self.weights = [w-(((float(eta)/len(miniBatch))*we)) for w, we in zip(self.weights, weightError)]
+		self.biases = [b-(((float(eta)/len(miniBatch))*be)) for b, be in zip(self.biases, biasError)]
+
 	def backprop(self, x, y):
 		weightError = [np.zeros(w.shape) for w in self.weights]
 		biasError = [np.zeros(b.shape) for b in self.biases]
 		delta = [np.zeros(b.shape) for b in self.biases]
-		activations = [x]
-		activation = x
+		activation = x.reshape(784, 1)
+		activations = [activation]
 		zs = []
 		z = ""
 		for w, b in zip(self.weights, self.biases):
@@ -177,7 +176,7 @@ class Network():
 			zs.append(z)
 			activation = sigmoid(z)
 			activations.append(activation)
-		delta[-1] = -costDerivative(y, activations[-1].T)*derivSigmoid(zs[-1]).T
+		delta[-1] = (self.cost).delta(zs[-1], activations[-1], y)
 		weightError[-1] = np.dot(activations[-2], delta[-1]).T
 		biasError[-1] = delta[-1].T
 		for i in range(2, self.numOfLayers):
@@ -188,58 +187,36 @@ class Network():
 		return weightError, biasError
 	
 	def feedforward(self, activation):
-		zs = []
-		activations = []
-		for w, b in zip(self.weights, self.biases):
-			activation = sigmoid(np.dot(w, activation)+b)
+		for w, b in zip(self.weights, self.biases): activation = sigmoid(np.dot(w, activation)+b)
 		return(activation)
-	def mse(self, x, y):
-		prediction = self.feedforward(x)
-		correct = 0
-		totalPercent = (np.linalg.norm(prediction - y) ** 2)
-		totalPercent = totalPercent**(float(1)/totalPercent)/10
-		if np.argmax(prediction) == np.argmax(y): correct = 1
-		return 1-totalPercent, correct
 
+	def mse(self, x, y):
+		prediction = self.feedforward(x).reshape(10)
+		correct = 0
+		totalPercent = (np.linalg.norm(y.reshape(1, 10)-prediction) ** 2) 
+		if np.argmax(prediction) == np.argmax(y): correct = 1
+		return totalPercent, correct
+
+	def classify(self, trainingData):
+		x = self.feedforward(trainingData[0].reshape(784, 1)).reshape(1, 10)
+		print("Network prediction: %d. Actual: %d" %(np.argmax(x), trainingData[1]))
+		displayImage(trainingData[0].reshape(28, 28))
+		
 def costDerivative(y, activation):
 	whatINeed = y-activation
 	return whatINeed
-def divideData(data, trainOrTest):
-	pixels = np.asarray([np.array([data[trainOrTest][i][0]]) for i in range(60000)])
-	numbers = np.asarray([np.array([data[trainOrTest][i][1]]) for i in range(60000)])
-	trainingData = zip(pixels, numbers)
-	testPixels = pixels[:-59000]
-	for i in testPixels:
-		i = i.transpose()
-	testNumbers = numbers[:-59000]
-	return trainingData, testPixels, testNumbers
-
 #Parameter Declarations-------------
 numOfInputs = 784
-epochs = 700
-sizeOfMinis = 10000
+epochs = 4
+sizeOfMinis = 10
 learnRate = 2
-sizes = np.array([numOfInputs,2,3,10])
+sizes = np.array([numOfInputs,30,10])
 #-----------------------------------
 
-#Learning--------------------------
-trainingData, testPixels, testNumbers = divideData(loadData(), "train")
+#Learning/Classify------------------
 w, b = retreiveNetwork()
-network = Network(sizes, trainedWeights=w, trainedBiases=b, saveNetworkStuff=True)
-'''
-cc = np.zeros((10, 1))
-cc[0] = 1
-print(network.mse(np.zeros((784, 1)), cc))
-pairs = [(np.zeros((784, 1)), cc)]
-print (network.getCost(pairs))
-'''
-network.SGD(trainingData, sizeOfMinis, epochs, learnRate, testPixels, testNumbers)
+network = Network(sizes, trainedWeights=w, trainedBiases=b, saveNetworkStuff=False)
+trainingData = loadData()
+network.classify(trainingData["test"][14])
+#network.SGD(trainingData["train"], sizeOfMinis, epochs, learnRate, trainingData["test"])
 #----------------------------------
-'''
-#trained---------------------------
-w, b = retreiveNetwork()
-example = np.random.rand(784, 1)
-trainedNetwork = Network(sizes)
-answer = trainedNetwork.feedforward(example)
-#----------------------------------
-'''
