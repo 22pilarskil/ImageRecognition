@@ -68,7 +68,7 @@ def loadData(vector=True):
 	else: data["train"] = np.asarray(list(zip(trainImages, np.asarray([i for i in trainLabels]))))
 	testLabels = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-labels-idx1-ubyte")
 	testImages = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-images-idx3-ubyte")
-	data["test"] = np.asarray(list(zip(testImages, np.asarray(testLabels))))
+	data["test"] = np.asarray(list(zip(testImages, np.asarray([vectorize(i) for i in testLabels]))))
 	return data
 
 def sigmoid(x):
@@ -138,9 +138,8 @@ class Network():
 				self.updateMiniBatch(miniBatch, eta)
 			totalCorrect = 0
 			totalPercentx = 0
-			blah = trainingData
-			numOfTests = len(blah)
-			for x, y in blah:
+			numOfTests = len(testData)
+			for x, y in testData:
 				totalPercent, correct = self.mse(x.reshape(784, 1), y)
 				totalCorrect+=correct
 				totalPercentx+=totalPercent
@@ -214,9 +213,9 @@ sizes = np.array([numOfInputs,30,10])
 #-----------------------------------
 
 #Learning/Classify------------------
-w, b = retreiveNetwork()
-network = Network(sizes, trainedWeights=w, trainedBiases=b, saveNetworkStuff=False)
+#w, b = retreiveNetwork()
+network = Network(sizes, trainedWeights=None, trainedBiases=None, saveNetworkStuff=False)
 trainingData = loadData()
-network.classify(trainingData["test"][14])
-#network.SGD(trainingData["train"], sizeOfMinis, epochs, learnRate, trainingData["test"])
+#network.classify(trainingData["test"][14])
+network.SGD(trainingData["train"], sizeOfMinis, epochs, learnRate, trainingData["test"])
 #----------------------------------
