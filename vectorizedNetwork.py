@@ -12,6 +12,16 @@ def displayImage(pixels, label = None):
   plt.imshow(pixels, cmap = "gray")
   plt.show()
 
+def compressImage(pixels, imageWidth, imageHeight, newWidth, newHeight):
+	widthScalar = newWidth/imageWidth
+	heightScalar = newHeight/imageHeight
+	pixels = pixels.reshape(imageHeight, imageWidth)
+
+
+
+def createCoefficient(we):
+	return(np.nan_to_num(we/we))
+
 def loadData():
 	print("Loading Data...")
 	def toInt(b):
@@ -97,15 +107,16 @@ class Network():
 	def __init__ (self, sizes, trainedWeights=None, trainedBiases=None, saveNetworkStuff=True):
 		self.numOfLayers = len(sizes)
 		if (trainedWeights==None):
-			self.weights = [np.random.randn(y, x) for y, x in zip(sizes[1:], sizes[:-1])]
+			self.weights = [np.random.randn(y, x)/np.sqrt(x) for y, x in zip(sizes[1:], sizes[:-1])]
+			self.storedWeights = np.copy(self.weights)
 			self.biases = [np.random.randn(y, 1) for y in sizes[1:]]
+			self.storedBiases = np.copy(self.biases)
 		else:
 			self.weights = trainedWeights
 			self.biases = trainedBiases
 		self.saveNetworkStuff = saveNetworkStuff
 		self.minimum = 100
 		self.streak = 0
-
 	def saveNetwork(self):
 		trainedBiases = {}
 		trainedWeights = {}
@@ -126,45 +137,63 @@ class Network():
 		else: 
 			self.minimum = totalPercent
 			self.streak = 0
+			self.storedWeights = np.copy(self.weights)
+			self.storedBiases = np.copy(self.biases)
 		if (self.streak>=specialNum): return True
 		else: return False
 
-	def SGD(self, trainingData, miniBatchSize, epochs, eta, testData, regularizationParam=False):
+	def SGD(self, trainingData, miniBatchSize, epochs, eta, testData, printNumber, lmbda=0):
 		print("Starting Stochastic Gradient Descent...")
-		lmbda = 0
-		if (regularizationParam): lmbda = regularizationParam
-		printNumber = 1
+		self.totalCorrect = 0
+		self.totalPercent = 0
+		def reset():
+			self.totalPercent = 0
+			self.totalCorrect = 0
+		def makeCheck(label):
+			reset()
+			self.totalCorrect = 0
+			for x, y in testData:
+				percent, correct = self.mse(x.reshape(784, 1), y)
+				self.totalCorrect+=correct
+				self.totalPercent+=percent
+			self.totalPercent/=(len(testData)/100)
+			print(label)
+			print("Percent Error: %.8f. Total Correct: %d/%d" %(self.totalPercent, self.totalCorrect, len(testData)))
+			reset()
+		makeCheck("Initialization:")
 		for j in range(epochs):
+			reset()
 			random.shuffle(trainingData)
 			miniBatches = [trainingData[k:k+miniBatchSize] for k in range(0, len(trainingData), miniBatchSize)]
 			for miniBatch in miniBatches:
-				self.updateMiniBatch(miniBatch, eta, len(trainingData), lmbda)
-			totalCorrect = 0
-			totalPercent = 0
-			numOfTests = len(testData)
+				self.updateMiniBatch(miniBatch, eta, lmbda, len(trainingData))
 			for x, y in testData:
 				percent, correct = self.mse(x.reshape(784, 1), y)
-				totalCorrect+=correct
-				totalPercent+=percent
-			totalPercent/=(numOfTests/100)
+				self.totalCorrect+=correct
+				self.totalPercent+=percent
+			self.totalPercent/=(len(testData)/100)
 			if (j%printNumber==0):
-				print("Epoch %d complete. Percent Error: %.8f. Total Correct: %d/%d" %(j, totalPercent, totalCorrect, numOfTests))
-			if (self.earlyStop(totalPercent, epochs)):
+				print("Epoch %d complete. Percent Error: %.8f. Total Correct: %d/%d" %(j, self.totalPercent, self.totalCorrect, len(testData)))
+			if (self.earlyStop(self.totalPercent, epochs)):
 				print("Network oversaturated- exiting SGD")
+				self.weights = np.copy(self.storedWeights)
+				self.biases = np.copy(self.storedBiases)
 				break
+		makeCheck("Final Status:")
 		if(self.saveNetworkStuff):
 			self.saveNetwork()
 			print("Weights and Biases Saved")
 
-	def updateMiniBatch(self, miniBatch, eta, n, lmbda):
+	def updateMiniBatch(self, miniBatch, eta, lmbda, n):
 		weightError = [np.zeros(w.shape) for w in self.weights]
 		biasError = [np.zeros(b.shape) for b in self.biases]
 		for x, y in miniBatch:
 			x = x.transpose()
 			deltaWeightError, deltaBiasError = self.backprop(x, y)
-			weightError = [we+dwe for we, dwe in zip(weightError, deltaWeightError)]
+			weightError = [we+dwe+(lmbda/len(miniBatch)*w)for we, dwe, w in zip(weightError, deltaWeightError, self.weights)]
+			#weightError = [we+dwe for we, dwe in zip(weightError, deltaWeightError)]
 			biasError = [be+dbe for be, dbe in zip(biasError, deltaBiasError)]
-		self.weights = [(1-eta*(lmbda/n))*w-(((float(eta)/len(miniBatch))*we)) for w, we in zip(self.weights, weightError)]
+		self.weights = [w-(((float(eta)/len(miniBatch))*we)) for w, we in zip(self.weights, weightError)]
 		self.biases = [b-(((float(eta)/len(miniBatch))*be)) for b, be in zip(self.biases, biasError)]
 
 	def backprop(self, x, y):
@@ -188,6 +217,15 @@ class Network():
 			delta[-i] = np.dot(delta[-i+1], self.weights[-i+1]) * derivSigmoid(z).T
 			biasError[-i] = delta[-i].T
 			weightError[-i] = (activations[-i-1]*delta[-i]).T
+			'''
+			negs = 0
+			x = 0
+		for w in weightError:
+			for ww in w:
+				for www in ww:
+					if (www==0): negs+=1
+		print("%d/%d" %(negs, 30*784+10*30))
+		'''
 		return weightError, biasError
 	
 	def feedforward(self, activation):
@@ -203,7 +241,7 @@ class Network():
 
 	def classify(self, trainingData):
 		x = self.feedforward(trainingData[0].reshape(784, 1)).reshape(1, 10)
-		print("Network prediction: %d. Actual: %d" %(np.argmax(x), trainingData[1]))
+		print("Network prediction: %d. Actual: %d" %(np.argmax(x), np.argmax(trainingData[1])))
 		displayImage(trainingData[0].reshape(28, 28))
 		
 	def costDerivative(self, activation, y):
@@ -212,14 +250,16 @@ class Network():
 numOfInputs = 784
 epochs = 20
 sizeOfMinis = 10
-learnRate = 2
+learnRate = 0.5
 sizes = np.array([numOfInputs,30,10])
+regularizationParam = 0.0
+printNumber = 1
 #-----------------------------------
 
 #Learning/Classify------------------
-#w, b = retreiveNetwork()
-network = Network(sizes, trainedWeights=None, trainedBiases=None, saveNetworkStuff=False)
+w, b = retreiveNetwork()
+network = Network(sizes, trainedWeights=w, trainedBiases=b, saveNetworkStuff=True)
 trainingData = loadData()
-#network.classify(trainingData["test"][14])
-network.SGD(trainingData["train"], sizeOfMinis, epochs, learnRate, trainingData["test"])
+#network.classify(trainingData["test"][100])
+network.SGD(trainingData["train"], sizeOfMinis, epochs, learnRate, trainingData["test"], printNumber, regularizationParam)
 #----------------------------------
