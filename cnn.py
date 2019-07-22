@@ -52,11 +52,11 @@ def loadData():
       return parsed
   #add validation if needed
   data = {"train":[], "test":[]}
-  trainImages = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/train-images-idx3-ubyte")
-  trainLabels = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/train-labels-idx1-ubyte")
+  trainImages = loadFile("/Users/michaelpilarski/Desktop/CNNs/train-images.idx3-ubyte")
+  trainLabels = loadFile("/Users/michaelpilarski/Desktop/CNNs/train-labels.idx1-ubyte")
   data["train"] = np.asarray(list(zip(trainImages, np.asarray([vectorize(i) for i in trainLabels]))))
-  testLabels = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-labels-idx1-ubyte")
-  testImages = loadFile("/Users/MichaelPilarski1/Desktop/Neural_Network/data/t10k-images-idx3-ubyte")
+  testLabels = loadFile("/Users/michaelpilarski/Desktop/CNNs/t10k-labels.idx1-ubyte")
+  testImages = loadFile("/Users/michaelpilarski/Desktop/CNNs/t10k-images.idx3-ubyte")
   data["test"] = np.asarray(list(zip(testImages, np.asarray([vectorize(i) for i in testLabels]))))
   return data
 
@@ -83,60 +83,45 @@ class featureMap():
   def convolve(self, image, num, strideLength=1):
     self.num = (num+1)*144
     self.Image = image.reshape(28, 28)
-    chunks = view_as_windows(self.Image, self.kernelDimensions, strideLength).reshape(576, 25)*self.weights.reshape(25)
-    chunks = np.asarray([np.sum(chunks, axis=1)])
-    self.Chunks = chunks.reshape(24, 24)+self.biases
-    return self.pool(self.Chunks, strideLength)
+    start = times()
+    self.Chunks = view_as_windows(self.Image, self.kernelDimensions, strideLength)#.reshape(576, 25)*self.weights.reshape(25)
+    print(times()-start)
+    start = times()
+    self.Chunks = self.Chunks.reshape(576, 25)
+    print(times()-start)
+    start = times()
+    self.Chunks*=self.weights.reshape(25)
+    print(times()-start)
+    start = times()
+    chunks = np.asarray([np.sum(self.Chunks, axis=1)]).reshape(24, 24)+self.biases
+    print(times()-start)
+    return self.pool(chunks, strideLength)
   def pool(self, chunks, strideLength):
     pools = view_as_blocks(chunks, (2, 2)).reshape(144, 4)**2
     pieces = np.asarray([np.sum(pools, axis=1)]).reshape(12, 12)
     self.Pools = pools.reshape(144, 2, 2)
     return np.sqrt(pieces)
   def getPoolDerivatives(self, delta):
-    return np.asarray([[pixel/math.sqrt(np.sum(self.Pools[i]**2))*delta[i] for pixel in self.Pools[i]] for i in range(len(self.Pools))])
-  def getPieces(self, item):
-    if item=="image": return self.Image
-    else: return self.Chunks
+    pools = self.Pools.reshape(144, 4)
+    rootSummedSquares = np.sqrt(np.sum(pools**2, axis = 1))
+    poolDerivatives = (pools.T/rootSummedSquares).T.reshape(144, 2, 2)
+    return poolDerivatives
   def reconstructShape(self, poolDerivatives):
-    strips = [np.zeros((24, 2)) for i in range(12)]
-    for i in range(12):
-      x = poolDerivatives[i*12]
-      for j in range(1, 12):
-        x = np.concatenate((x, poolDerivatives[i*12+j].T))
-      strips[i] = x
-    remade = strips[0]
-    for i in range(1, 12):
-      remade = np.concatenate((remade, strips[i]), axis=1)
+    remade = poolDerivatives.reshape(288, 2)
+    z = [remade[i:i+24] for i in range(0, 288, 24)]
+    remade = np.asarray(np.concatenate([zs for zs in z], axis = 1))
     return remade.T
   def backpropCONV(self, delta, inputWeights, numFeatures):
     weights = np.zeros((len(inputWeights), 144))
     weights = np.take(inputWeights, [i for i in range(self.num-144, self.num)], axis=1)
     delta = np.dot(delta, weights).reshape(144)
     poolDerivatives = self.getPoolDerivatives(delta)
-    alignedPoolDerivatives = self.reconstructShape(poolDerivatives)
-    weightError = np.zeros(self.kernelDimensions)
-    biasError = np.zeros((1))
-    y = []
-    Exit = False
-    start = times()
-    for i in range(len(alignedPoolDerivatives)):
-      if Exit: break
-      array2 = [j for j in range(i+5, 28)]
-      array = [j for j in range(0, min(i, 28-5))]+array2
-      if len(array2)==0: Exit = True
-      strip = np.delete(self.Image, array, 0)
-      exit_ = False
-      for j in range(len(alignedPoolDerivatives[i])):
-        if exit_: break
-        array2 = [k for k in range(j+5, 28)]
-        array = [k for k in range(0, min(j, 28-5))]+array2
-        if len(array2)==0: exit_ = True
-        y.append(np.delete(strip, array, 1))
-        biasError+=alignedPoolDerivatives[i][j]
-        weightError = np.asarray([we+dwe for we, dwe in zip(weightError, alignedPoolDerivatives[i][j]*y[-1])])
-    print(times()-start)
-    self.weightError = np.asarray([we+dwe for we, dwe in zip(self.weightError/float(24), weightError)])
-    self.biasError+=(biasError/float(24))
+    alignedPoolDerivatives = self.reconstructShape(poolDerivatives.transpose(0, 2, 1)).flatten()
+    weightError = (self.Chunks.T*alignedPoolDerivatives).T
+    weightError = np.sum(weightError, axis=0).reshape(5, 5)
+    biasError = np.sum(alignedPoolDerivatives)
+    self.weightError+=weightError
+    self.biasError+=biasError
   def updateMiniBatchCONV(self, miniBatch, eta):
     self.weights = [w-(float(eta)/len(miniBatch))*we for w, we in zip(self.weights, self.weightError)]
     self.biases = [b-(float(eta)/len(miniBatch))*be for b, be in zip(self.biases, self.biasError)]
@@ -149,7 +134,7 @@ def derivSigmoid(x):
 class Network():
   def __init__ (self, numFeatures, inputSizes, kernelDimensions):
     self.numFeatures = numFeatures
-    self.sizes = np.array([numFeatures*144, inputSizes[0], inputSizes[1]])
+    self.sizes = np.asarray([numFeatures*144, inputSizes[0], inputSizes[1]])
     self.weights = [np.random.randn(y, x)/np.sqrt(x) for y, x in zip(self.sizes[1:], self.sizes[:-1])]
     self.biases = [np.random.randn(y, 1) for y in self.sizes[1:]]
     self.features = [featureMap(kernelDimensions) for i in range(numFeatures)]
@@ -177,9 +162,7 @@ class Network():
       delta[-i] = np.dot(delta[-i+1], self.weights[-i+1]) * derivSigmoid(z).T
       biasError[-i] = delta[-i].T
       weightError[-i] = (activations[-i-1]*delta[-i]).T
-    start = time.process_time()
     for feature in self.features: feature.backpropCONV(delta[0], self.weights[0], self.numFeatures)
-    print(time.process_time()-start)
     return weightError, biasError
   def feedforward(self, x):
     activation = np.asarray([self.features[f].convolve(x, f) for f in range(len(self.features))]).reshape(self.numFeatures*144, 1)
@@ -223,12 +206,11 @@ end = time.process_time()
 print((end-start))
 '''
 
-#start = time.process_time()
+start = time.process_time()
 for i in range(1):
   network.backpropMLP(trainingData[0])
-#end = time.process_time()
-#print(end-start)
+end = time.process_time()
+#print((end-start))
 
 
 #network.SGD(0, .5, trainingData, testData, 20, 10)
-
