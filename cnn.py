@@ -83,18 +83,10 @@ class featureMap():
   def convolve(self, image, num, strideLength=1):
     self.num = (num+1)*144
     self.Image = image.reshape(28, 28)
-    start = times()
     self.Chunks = view_as_windows(self.Image, self.kernelDimensions, strideLength)#.reshape(576, 25)*self.weights.reshape(25)
-    print(times()-start)
-    start = times()
     self.Chunks = self.Chunks.reshape(576, 25)
-    print(times()-start)
-    start = times()
     self.Chunks*=self.weights.reshape(25)
-    print(times()-start)
-    start = times()
-    chunks = np.asarray([np.sum(self.Chunks, axis=1)]).reshape(24, 24)+self.biases
-    print(times()-start)
+    chunks = np.asarray([np.sum(self.Chunks, axis=1)]).reshape(24, 24)
     return self.pool(chunks, strideLength)
   def pool(self, chunks, strideLength):
     pools = view_as_blocks(chunks, (2, 2)).reshape(144, 4)**2
