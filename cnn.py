@@ -66,6 +66,9 @@ testData = data["test"]
 kernelDimensions = (5, 5)
 sizes = [30, 10]
 
+def times():
+  return time.process_time()
+  
 class featureMap():
   def __init__ (self, kernelDimensions):
     self.kernelDimensions = kernelDimensions
@@ -107,8 +110,7 @@ class featureMap():
     return remade.T
   def backpropCONV(self, delta, inputWeights, numFeatures):
     weights = np.zeros((len(inputWeights), 144))
-    #for i in range (len(inputWeights)): weights[i] = inputWeights[i][self.num-144:self.num]
-    weights = np.take(inputWeights, [i for i in range(self.num-144, self.num)], axis=0)
+    weights = np.take(inputWeights, [i for i in range(self.num-144, self.num)], axis=1)
     delta = np.dot(delta, weights).reshape(144)
     poolDerivatives = self.getPoolDerivatives(delta)
     alignedPoolDerivatives = self.reconstructShape(poolDerivatives)
@@ -116,6 +118,7 @@ class featureMap():
     biasError = np.zeros((1))
     y = []
     Exit = False
+    start = times()
     for i in range(len(alignedPoolDerivatives)):
       if Exit: break
       array2 = [j for j in range(i+5, 28)]
@@ -131,6 +134,7 @@ class featureMap():
         y.append(np.delete(strip, array, 1))
         biasError+=alignedPoolDerivatives[i][j]
         weightError = np.asarray([we+dwe for we, dwe in zip(weightError, alignedPoolDerivatives[i][j]*y[-1])])
+    print(times()-start)
     self.weightError = np.asarray([we+dwe for we, dwe in zip(self.weightError/float(24), weightError)])
     self.biasError+=(biasError/float(24))
   def updateMiniBatchCONV(self, miniBatch, eta):
