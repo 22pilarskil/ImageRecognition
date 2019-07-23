@@ -83,9 +83,7 @@ class featureMap():
   def convolve(self, image, num, strideLength=1):
     self.num = (num+1)*144
     self.Image = image.reshape(28, 28)
-    self.Chunks = view_as_windows(self.Image, self.kernelDimensions, strideLength)#.reshape(576, 25)*self.weights.reshape(25)
-    self.Chunks = self.Chunks.reshape(576, 25)
-    self.Chunks*=self.weights.reshape(25)
+    self.Chunks = view_as_windows(self.Image, self.kernelDimensions, strideLength).reshape(576, 25)*self.weights.reshape(25)
     chunks = np.asarray([np.sum(self.Chunks, axis=1)]).reshape(24, 24)
     return self.pool(chunks, strideLength)
   def pool(self, chunks, strideLength):
@@ -103,14 +101,12 @@ class featureMap():
     z = [remade[i:i+24] for i in range(0, 288, 24)]
     remade = np.asarray(np.concatenate([zs for zs in z], axis = 1))
     return remade.T
-  def backpropCONV(self, delta, inputWeights, numFeatures):
-    weights = np.zeros((len(inputWeights), 144))
+  def backpropCONV(self, delta, inputWeights):
     weights = np.take(inputWeights, [i for i in range(self.num-144, self.num)], axis=1)
     delta = np.dot(delta, weights).reshape(144)
     poolDerivatives = self.getPoolDerivatives(delta)
     alignedPoolDerivatives = self.reconstructShape(poolDerivatives.transpose(0, 2, 1)).flatten()
-    weightError = (self.Chunks.T*alignedPoolDerivatives).T
-    weightError = np.sum(weightError, axis=0).reshape(5, 5)
+    weightError = np.sum((self.Chunks.T*alignedPoolDerivatives).T, axis=0).reshape(5, 5)
     biasError = np.sum(alignedPoolDerivatives)
     self.weightError+=weightError
     self.biasError+=biasError
@@ -154,7 +150,7 @@ class Network():
       delta[-i] = np.dot(delta[-i+1], self.weights[-i+1]) * derivSigmoid(z).T
       biasError[-i] = delta[-i].T
       weightError[-i] = (activations[-i-1]*delta[-i]).T
-    for feature in self.features: feature.backpropCONV(delta[0], self.weights[0], self.numFeatures)
+    for feature in self.features: feature.backpropCONV(delta[0], self.weights[0])
     return weightError, biasError
   def feedforward(self, x):
     activation = np.asarray([self.features[f].convolve(x, f) for f in range(len(self.features))]).reshape(self.numFeatures*144, 1)
