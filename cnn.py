@@ -72,48 +72,59 @@ def times():
 class featureMap():
   def __init__ (self, kernelDimensions):
     self.kernelDimensions = kernelDimensions
-    self.weights = np.random.randn(kernelDimensions[0], kernelDimensions[1])
+    self.weights = np.random.randn(5, 5)/np.sqrt(5)
     self.biases = np.random.randn((1))
     self.Image = None
     self.Chunks = None
     self.Pools = None
     self.num = None
+    self.Z = None
     self.weightError = np.zeros(self.weights.shape)
     self.biasError = np.zeros((1))
+  def reset(self):
+      self.Image = None
+      self.Chunks = None
+      self.Pools = None
+      self.num = None
+      self.Z = None
   def convolve(self, image, num, strideLength=1):
     self.num = (num+1)*144
     self.Image = image.reshape(28, 28)
     self.Chunks = view_as_windows(self.Image, self.kernelDimensions, strideLength).reshape(576, 25)*self.weights.reshape(25)
-    chunks = np.asarray([np.sum(self.Chunks, axis=1)]).reshape(24, 24)
-    return self.pool(chunks, strideLength)
+    self.Z = np.array([np.sum(self.Chunks, axis=1)]).reshape(24, 24)+self.biases
+    return self.pool(sigmoid(self.Z), strideLength)
   def pool(self, chunks, strideLength):
     pools = view_as_blocks(chunks, (2, 2)).reshape(144, 4)**2
-    pieces = np.asarray([np.sum(pools, axis=1)]).reshape(12, 12)
+    pieces = [np.sum(pools, axis=1)]
     self.Pools = pools.reshape(144, 2, 2)
-    return np.sqrt(pieces)
+    return np.sqrt(pieces).reshape(12, 12)
   def getPoolDerivatives(self, delta):
     pools = self.Pools.reshape(144, 4)
     rootSummedSquares = np.sqrt(np.sum(pools**2, axis = 1))
     poolDerivatives = (pools.T/rootSummedSquares).T.reshape(144, 2, 2)
-    return poolDerivatives
+    return (delta*poolDerivatives.T).T
   def reconstructShape(self, poolDerivatives):
     remade = poolDerivatives.reshape(288, 2)
     z = [remade[i:i+24] for i in range(0, 288, 24)]
-    remade = np.asarray(np.concatenate([zs for zs in z], axis = 1))
+    remade = np.concatenate([zs for zs in z], axis = 1)
     return remade.T
   def backpropCONV(self, delta, inputWeights):
-    weights = np.take(inputWeights, [i for i in range(self.num-144, self.num)], axis=1)
+    weights = inputWeights.T[self.num-144:self.num].T
     delta = np.dot(delta, weights).reshape(144)
     poolDerivatives = self.getPoolDerivatives(delta)
-    alignedPoolDerivatives = self.reconstructShape(poolDerivatives.transpose(0, 2, 1)).flatten()
-    weightError = np.sum((self.Chunks.T*alignedPoolDerivatives).T, axis=0).reshape(5, 5)
-    biasError = np.sum(alignedPoolDerivatives)
+    alignedPoolDerivatives = self.reconstructShape(poolDerivatives.transpose(0, 2, 1)).reshape(576)
+    weightError = np.sum((self.Chunks.T*(alignedPoolDerivatives*derivSigmoid(self.Z).reshape(576))).T, axis=0).reshape(5, 5)/576
+    biasError = np.sum(alignedPoolDerivatives)/576
     self.weightError+=weightError
     self.biasError+=biasError
-  def updateMiniBatchCONV(self, miniBatch, eta):
-    self.weights = [w-(float(eta)/len(miniBatch))*we for w, we in zip(self.weights, self.weightError)]
-    self.biases = [b-(float(eta)/len(miniBatch))*be for b, be in zip(self.biases, self.biasError)]
-    
+    self.reset()
+  def updateMiniBatchCONV(self, miniBatch, eta, lmbda, trainingData):
+    self.weights = (1-eta*lmbda/len(trainingData))*self.weights-(float(eta)/len(miniBatch))*self.weightError
+    self.biases = self.biases-(float(eta)/len(miniBatch))*self.biasError
+    self.weightError = np.zeros(self.weights.shape)
+    self.biasError = np.zeros((1))
+  def display(self):
+    print(self.weights)
 def sigmoid(x):
   return 1/(1+np.exp(-x))
 def derivSigmoid(x):
@@ -126,10 +137,6 @@ class Network():
     self.weights = [np.random.randn(y, x)/np.sqrt(x) for y, x in zip(self.sizes[1:], self.sizes[:-1])]
     self.biases = [np.random.randn(y, 1) for y in self.sizes[1:]]
     self.features = [featureMap(kernelDimensions) for i in range(numFeatures)]
-  def feedforward(self):
-    activation = np.asarray([self.features[f].convolve(imageData[0], f) for f in range(len(self.features))]).reshape(self.numFeatures*144, 1)
-    for w, b in zip(self.weights, self.biases): activation = sigmoid(np.dot(w, activation)+b)
-    return activation
   def backpropMLP(self, image):
     activation = np.asarray([self.features[f].convolve(image[0], f) for f in range(len(self.features))]).reshape(self.numFeatures*144, 1)
     activations = [activation]
@@ -154,7 +161,7 @@ class Network():
     return weightError, biasError
   def feedforward(self, x):
     activation = np.asarray([self.features[f].convolve(x, f) for f in range(len(self.features))]).reshape(self.numFeatures*144, 1)
-    for w, b in zip(self.weights, self.biases): activation = np.dot(w, activation)+b
+    for w, b in zip(self.weights, self.biases): activation = sigmoid(np.dot(w, activation)+b)
     return activation
   def mse(self, x, y):
     prediction = self.feedforward(x).reshape(10)
@@ -171,12 +178,23 @@ class Network():
       biasError = [be+dbe for be, dbe in zip(biasError, deltaBiasError)]
     self.weights = [(1-eta*lmbda/len(trainingData))*w-(((float(eta)/len(miniBatch))*we)) for w, we in zip(self.weights, weightError)]
     self.biases = [b-(((float(eta)/len(miniBatch))*be)) for b, be in zip(self.biases, biasError)]
-    for feature in self.features: feature.updateMiniBatchCONV(miniBatch, eta)
+    for feature in self.features: feature.updateMiniBatchCONV(miniBatch, eta, lmbda, trainingData)
   def SGD(self, lmbda, eta, trainingData, testData, epochs, miniBatchSize):
     for j in range(epochs):
+      for feature in self.features: feature.display()
+      start = times()
       random.shuffle(trainingData)
       miniBatches = [trainingData[k:k+miniBatchSize] for k in range(0, len(trainingData), miniBatchSize)]
       for miniBatch in miniBatches: self.updateMiniBatch(miniBatch, lmbda, eta)
+      totalCorrect = 0
+      totalPercent = 0
+      for x, y in testData:
+        percent, correct = network.mse(x, y)
+        totalCorrect+=correct
+        totalPercent+=percent
+      totalPercent/=(len(testData))
+      print("Percent Error: %.8f. Total Correct: %d/%d" %(totalPercent, totalCorrect, len(testData)))
+      print(times()-start)
 
 network = Network(3, sizes, kernelDimensions)
 '''
@@ -191,14 +209,13 @@ print(end-start)
 start = time.process_time()
 network.backpropMLP(trainingData[0])
 end = time.process_time()
-print((end-start))
+#print((end-start))
 '''
-
+'''
 start = time.process_time()
 for i in range(1):
   network.backpropMLP(trainingData[0])
 end = time.process_time()
 #print((end-start))
-
-
-#network.SGD(0, .5, trainingData, testData, 20, 10)
+'''
+network.SGD(0, .5, trainingData, testData, 20, 10)
