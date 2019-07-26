@@ -218,4 +218,8 @@ for i in range(1):
 end = time.process_time()
 #print((end-start))
 '''
-network.SGD(0, .5, trainingData, testData, 20, 10)
+learnRate = .5
+miniBatchSize = 10
+lmbda = 0
+epochs = 20
+network.SGD(lmbda, learnRate, trainingData, testData, epochs, miniBatchSize)
