@@ -7,6 +7,81 @@ from skimage.util.shape import view_as_windows
 from skimage.util.shape import view_as_blocks
 import time
 import math
+from tkinter import *
+from PIL import ImageTk, Image, ImageDraw
+import PIL
+
+def draw(fileName):
+    def save():
+        image1.save(fileName)
+    def drawIm(event):
+        x1, y1 = (event.x - 5), (event.y - 5)
+        x2, y2 = (event.x + 5), (event.y + 5)
+        cv.create_oval(x1, y1, x2, y2, width=5, fill="black")
+        draw.line(((x2,y2),(x1,y1)), fill="black", width=10)
+    width = 200
+    height = 200
+    white = (255, 255, 255)
+    root = Tk()
+    cv = Canvas(root, width=width, height=height, bg="white")
+    cv.pack()
+    image1 = PIL.Image.new("RGB", (width, height), white)
+    draw = ImageDraw.Draw(image1)
+    cv.bind("<B1-Motion>", drawIm)
+    button=Button(text="save", command=save)
+    button.pack()
+    root.mainloop()
+    
+def getActivation(fileName):
+    img = Image.open(fileName)
+    img = img.resize((28, 28))
+    img = np.take(np.asarray(img), [0], axis = 2).reshape(28, 28)
+    return np.abs(img-255)
+
+def saveNetwork(fileNames, weights, biases, layer="Dense"):
+    trainedBiases = {}
+    trainedWeights = {}
+    if layer=="Dense":
+      for i in range(len(weights)):
+        trainedBiases[i] = []
+        trainedWeights[i] = []
+        for j, k in zip(biases[i], weights[i]):
+          trainedBiases[i].append(j.tolist())
+          trainedWeights[i].append(k.tolist())
+    else:
+      trainedWeights[0] = []
+      trainedBiases[0] = []
+      trainedWeights[0].append(weights.tolist())
+      trainedBiases[0].append(biases.tolist())
+    with open (fileNames[0], 'w+') as JSONFile:
+      json.dump(trainedWeights, JSONFile)
+    with open(fileNames[1], 'w+') as JSONFile:
+      json.dump(trainedBiases, JSONFile)
+
+def retreiveNetwork(fileNames):
+  biases = {}
+  weights = {}
+  b = []
+  w = []
+  def take(fileName, mode, dictionary, listName):
+    with open(fileName, mode) as JSONFile:
+      data = json.load(JSONFile)
+      for i in data:
+        dictionary[i] = []
+        for j in range(len(data[i])):
+          dictionary[i].append(data[i][j])
+      for i in dictionary:
+        dictionary[i] = np.asarray(dictionary[i])
+    placeHolder = 0
+    while (placeHolder<(len(dictionary))):
+      for i in dictionary:
+        if (int(i)==placeHolder):
+          listName.append(dictionary[i])
+          placeHolder+=1
+  take(fileNames[0], 'r', weights, w)
+  take(fileNames[1], 'r', biases, b)
+  return w, b
+
 def displayImage(pixels, label = None):
   figure = plt.gcf()
   figure.canvas.set_window_title("Number display")
@@ -20,7 +95,6 @@ def loadData():
   print("Loading Data...")
   def toInt(b):
     return int(codecs.encode(b, "hex"), 16)
-
   def normalize(rawArray, range_):
     array = np.copy(rawArray).astype(np.float32)
     if range_ == (0, 1):
@@ -29,12 +103,10 @@ def loadData():
     dist = abs(range_[0])+abs(range_[1])
     array /= dist
     return array
-
   def vectorize(num):
     array = np.zeros(10)
     array[num] = 1
     return array
-
   def loadFile(fileName, mode="rb"):
     with open(fileName, mode) as raw:
       data = raw.read()
@@ -60,20 +132,19 @@ def loadData():
   data["test"] = np.asarray(list(zip(testImages, np.asarray([vectorize(i) for i in testLabels]))))
   return data
 
-data = loadData()
-trainingData = data["train"]
-testData = data["test"]
-kernelDimensions = (5, 5)
-sizes = [30, 10]
-
 def times():
   return time.process_time()
   
 class featureMap():
-  def __init__ (self, kernelDimensions):
+  def __init__ (self, kernelDimensions, trainedNet=None):
     self.kernelDimensions = kernelDimensions
-    self.weights = np.random.randn(5, 5)/np.sqrt(5)
-    self.biases = np.random.randn((1))
+    if trainedNet==None:
+      self.weights = np.random.randn(5, 5)/np.sqrt(5)
+      self.biases = np.random.randn((1))
+    else:
+      weights, biases = trainedNet
+      self.weights = weights[0][0]
+      self.biases = biases[0][0]
     self.Image = None
     self.Chunks = None
     self.Pools = None
@@ -81,6 +152,8 @@ class featureMap():
     self.Z = None
     self.weightError = np.zeros(self.weights.shape)
     self.biasError = np.zeros((1))
+    self.storedWeights = self.weights
+    self.storedBiases = self.biases
   def reset(self):
       self.Image = None
       self.Chunks = None
@@ -117,26 +190,44 @@ class featureMap():
     biasError = np.sum(alignedPoolDerivatives)/576
     self.weightError+=weightError
     self.biasError+=biasError
+    start = times()
     self.reset()
   def updateMiniBatchCONV(self, miniBatch, eta, lmbda, trainingData):
-    self.weights = (1-eta*lmbda/len(trainingData))*self.weights-(float(eta)/len(miniBatch))*self.weightError
+    self.weights = self.weights-(float(eta)/len(miniBatch))*self.weightError
     self.biases = self.biases-(float(eta)/len(miniBatch))*self.biasError
     self.weightError = np.zeros(self.weights.shape)
     self.biasError = np.zeros((1))
+  def update(self):
+    self.storedWeights = self.weights
+    self.storedBiases = self.biases
+  def get(self, what):
+    if what=='w': return self.storedWeights
+    else: return self.storedBiases
   def display(self):
-    print(self.weights)
+      displayImage(self.weights)
+    
 def sigmoid(x):
   return 1/(1+np.exp(-x))
 def derivSigmoid(x):
   return sigmoid(x)*(1-sigmoid(x))
     
 class Network():
-  def __init__ (self, numFeatures, inputSizes, kernelDimensions):
+  def __init__ (self, numFeatures, inputSizes, kernelDimensions, saveNet=False, takeNet=False):
     self.numFeatures = numFeatures
     self.sizes = np.asarray([numFeatures*144, inputSizes[0], inputSizes[1]])
-    self.weights = [np.random.randn(y, x)/np.sqrt(x) for y, x in zip(self.sizes[1:], self.sizes[:-1])]
-    self.biases = [np.random.randn(y, 1) for y in self.sizes[1:]]
-    self.features = [featureMap(kernelDimensions) for i in range(numFeatures)]
+    self.saveNet = saveNet
+    if self.saveNet: self.fileNames = [[("weights%d20.txt" %(i+1)), ("biases%d20.txt" %(i+1))] for i in range(numFeatures)]
+    if takeNet:
+      self.weights, self.biases = retreiveNetwork(["weights20.txt", "biases20.txt"])
+      self.features = [featureMap(kernelDimensions, retreiveNetwork([("weights%d20.txt" %(i+1)), ("biases%d20.txt" %(i+1))])) for i in range(numFeatures)]
+    else:
+      self.weights = [np.random.randn(y, x)/np.sqrt(x) for y, x in zip(self.sizes[1:], self.sizes[:-1])]
+      self.biases = [np.random.randn(y, 1) for y in self.sizes[1:]]
+      self.features = [featureMap(kernelDimensions) for i in range(numFeatures)]
+    self.storedWeights = self.weights
+    self.storedBiases = self.biases
+    self.highestCorrect = 0
+    self.streak = 0
   def backpropMLP(self, image):
     activation = np.asarray([self.features[f].convolve(image[0], f) for f in range(len(self.features))]).reshape(self.numFeatures*144, 1)
     activations = [activation]
@@ -179,9 +270,18 @@ class Network():
     self.weights = [(1-eta*lmbda/len(trainingData))*w-(((float(eta)/len(miniBatch))*we)) for w, we in zip(self.weights, weightError)]
     self.biases = [b-(((float(eta)/len(miniBatch))*be)) for b, be in zip(self.biases, biasError)]
     for feature in self.features: feature.updateMiniBatchCONV(miniBatch, eta, lmbda, trainingData)
+  def earlyStop(self, totalCorrect):
+    if totalCorrect>self.highestCorrect:
+      self.storedWeights = self.weights
+      self.storedBiases = self.biases
+      self.highestCorrect = totalCorrect
+      self.streak = 0
+      for feature in self.features: feature.update()
+    else: self.streak+=1
+    if self.streak>=4: return True
+    else: return False
   def SGD(self, lmbda, eta, trainingData, testData, epochs, miniBatchSize):
     for j in range(epochs):
-      for feature in self.features: feature.display()
       start = times()
       random.shuffle(trainingData)
       miniBatches = [trainingData[k:k+miniBatchSize] for k in range(0, len(trainingData), miniBatchSize)]
@@ -195,31 +295,28 @@ class Network():
       totalPercent/=(len(testData))
       print("Percent Error: %.8f. Total Correct: %d/%d" %(totalPercent, totalCorrect, len(testData)))
       print(times()-start)
+      if self.earlyStop(totalCorrect): break
+    if self.saveNet:
+      saveNetwork(["weights20.txt", "biases20.txt"], self.storedWeights, self.storedBiases, layer="Dense")
+      for feature, fileName in zip(self.features, self.fileNames): saveNetwork([fileName[0], fileName[1]], feature.get('w'), feature.get('b'), layer="Conv")
+  def classify(self, image):
+        x = self.feedforward(image.reshape(784, 1)).reshape(1, 10)
+        print("Network prediction: %d" %(np.argmax(x)))
+        displayImage(image.reshape(28, 28))
+    
 
-network = Network(3, sizes, kernelDimensions)
-'''
-feature = featureMap(kernelDimensions)
-start = time.process_time()
-feature.convolve(trainingData[1][0], 1)
-end = time.process_time()
-print(end-start)
-'''
+data = loadData()
+trainingData = data["train"]
+testData = data["test"]
+kernelDimensions = (5, 5)
+sizes = [30, 10]
+def getImage():
+    fileName = "image.png"
+    draw(fileName)
+    activation = getActivation(fileName)
+    return activation
 
-'''
-start = time.process_time()
-network.backpropMLP(trainingData[0])
-end = time.process_time()
-#print((end-start))
-'''
-'''
-start = time.process_time()
-for i in range(1):
-  network.backpropMLP(trainingData[0])
-end = time.process_time()
-#print((end-start))
-'''
-learnRate = .5
-miniBatchSize = 10
-lmbda = 0
-epochs = 20
-network.SGD(lmbda, learnRate, trainingData, testData, epochs, miniBatchSize)
+
+network = Network(5, sizes, kernelDimensions, saveNet=True, takeNet=False)
+network.SGD(.5, .15, trainingData, testData, 20, 10)
+#network.classify(getImage())
