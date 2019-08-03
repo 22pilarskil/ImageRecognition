@@ -1,15 +1,19 @@
+#math
 import numpy as np 
 import random
-import codecs
+import math
+#visual
 import matplotlib.pyplot as plt
+from tkinter import *
+import PIL
+from PIL import ImageTk, Image, ImageDraw
+#functionality
+import codecs
 import json
 from skimage.util.shape import view_as_windows
 from skimage.util.shape import view_as_blocks
+#time
 import time
-import math
-from tkinter import *
-from PIL import ImageTk, Image, ImageDraw
-import PIL
 
 def draw(fileName):
     def save():
@@ -113,16 +117,13 @@ def loadData():
       magicNumber = toInt(data[:4])
       length = toInt(data[4:8])
       if magicNumber==2049:
-        #labels
         parsed = np.frombuffer(data, dtype=np.uint8, offset = 8)
       elif magicNumber==2051:
-        #images
         numOfRows = toInt(data[8:12])
         numOfColumns = toInt(data[12:16])
         parsed = normalize(np.frombuffer(data, dtype=np.uint8, offset = 16).reshape(length, numOfRows*numOfColumns), (0, 255))
       else: return -1
       return parsed
-  #add validation if needed
   data = {"train":[], "test":[]}
   trainImages = loadFile("/Users/michaelpilarski/Desktop/CNNs/train-images.idx3-ubyte")
   trainLabels = loadFile("/Users/michaelpilarski/Desktop/CNNs/train-labels.idx1-ubyte")
@@ -131,9 +132,6 @@ def loadData():
   testImages = loadFile("/Users/michaelpilarski/Desktop/CNNs/t10k-images.idx3-ubyte")
   data["test"] = np.asarray(list(zip(testImages, np.asarray([vectorize(i) for i in testLabels]))))
   return data
-
-def times():
-  return time.process_time()
   
 class featureMap():
   def __init__ (self, kernelDimensions, trainedNet=None):
@@ -145,28 +143,23 @@ class featureMap():
       weights, biases = trainedNet
       self.weights = weights[0][0]
       self.biases = biases[0][0]
-    self.Image = None
-    self.Chunks = None
-    self.Pools = None
-    self.num = None
-    self.Z = None
     self.weightError = np.zeros(self.weights.shape)
     self.biasError = np.zeros((1))
     self.storedWeights = self.weights
     self.storedBiases = self.biases
   def reset(self):
-      self.Image = None
-      self.Chunks = None
-      self.Pools = None
-      self.num = None
-      self.Z = None
+    self.Image = None
+    self.Chunks = None
+    self.Pools = None
+    self.num = None
+    self.Z = None
   def convolve(self, image, num, strideLength=1):
     self.num = (num+1)*144
     self.Image = image.reshape(28, 28)
     self.Chunks = view_as_windows(self.Image, self.kernelDimensions, strideLength).reshape(576, 25)*self.weights.reshape(25)
     self.Z = np.array([np.sum(self.Chunks, axis=1)]).reshape(24, 24)+self.biases
-    return self.pool(sigmoid(self.Z), strideLength)
-  def pool(self, chunks, strideLength):
+    return self.pool(sigmoid(self.Z))
+  def pool(self, chunks):
     pools = view_as_blocks(chunks, (2, 2)).reshape(144, 4)**2
     pieces = [np.sum(pools, axis=1)]
     self.Pools = pools.reshape(144, 2, 2)
@@ -193,7 +186,7 @@ class featureMap():
     start = times()
     self.reset()
   def updateMiniBatchCONV(self, miniBatch, eta, lmbda, trainingData):
-    self.weights = self.weights-(float(eta)/len(miniBatch))*self.weightError
+    self.weights = (1-eta*lmbda/len(trainingData))*self.weights-(float(eta)/len(miniBatch))*self.weightError
     self.biases = self.biases-(float(eta)/len(miniBatch))*self.biasError
     self.weightError = np.zeros(self.weights.shape)
     self.biasError = np.zeros((1))
@@ -210,6 +203,8 @@ def sigmoid(x):
   return 1/(1+np.exp(-x))
 def derivSigmoid(x):
   return sigmoid(x)*(1-sigmoid(x))
+def times():
+  return time.process_time()
     
 class Network():
   def __init__ (self, numFeatures, inputSizes, kernelDimensions, saveNet=False, takeNet=False):
@@ -278,14 +273,21 @@ class Network():
       self.streak = 0
       for feature in self.features: feature.update()
     else: self.streak+=1
-    if self.streak>=4: return True
+    if self.streak>=4: #return True
+        return False
     else: return False
+  def display(self):
+    for feature in self.features: feature.display()
   def SGD(self, lmbda, eta, trainingData, testData, epochs, miniBatchSize):
+    self.lmbda=lmbda
+    self.eta=eta
     for j in range(epochs):
+      self.lmbda=lmbda*(1-j/2/epochs)
+      self.eta=eta*(1-j/2/epochs)
       start = times()
       random.shuffle(trainingData)
       miniBatches = [trainingData[k:k+miniBatchSize] for k in range(0, len(trainingData), miniBatchSize)]
-      for miniBatch in miniBatches: self.updateMiniBatch(miniBatch, lmbda, eta)
+      for miniBatch in miniBatches: self.updateMiniBatch(miniBatch, self.lmbda, self.eta)
       totalCorrect = 0
       totalPercent = 0
       for x, y in testData:
@@ -293,7 +295,7 @@ class Network():
         totalCorrect+=correct
         totalPercent+=percent
       totalPercent/=(len(testData))
-      print("Percent Error: %.8f. Total Correct: %d/%d" %(totalPercent, totalCorrect, len(testData)))
+      print("Epoch %d - Percent Error: %.8f. Total Correct: %d/%d" %(j+1, totalPercent, totalCorrect, len(testData)))
       print(times()-start)
       if self.earlyStop(totalCorrect): break
     if self.saveNet:
@@ -303,8 +305,8 @@ class Network():
         x = self.feedforward(image.reshape(784, 1)).reshape(1, 10)
         print("Network prediction: %d" %(np.argmax(x)))
         displayImage(image.reshape(28, 28))
+      
     
-
 data = loadData()
 trainingData = data["train"]
 testData = data["test"]
@@ -318,5 +320,6 @@ def getImage():
 
 
 network = Network(5, sizes, kernelDimensions, saveNet=True, takeNet=False)
-network.SGD(.5, .15, trainingData, testData, 20, 10)
+network.SGD(.8, .3, trainingData, testData, 20, 10)
+#network.display()
 #network.classify(getImage())
